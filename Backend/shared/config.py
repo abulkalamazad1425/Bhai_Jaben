@@ -1,0 +1,2 @@
+SUPABASE_URL = "https://jckuwumakxgapfcgpila.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impja3V3dW1ha3hnYXBmY2dwaWxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEyMTU5MDcsImV4cCI6MjA2Njc5MTkwN30.G3GbjD-CkQxK6vsVi6bk2Sg8B_kL_71u-_8z6J6PtLw"  
