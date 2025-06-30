@@ -1,11 +1,13 @@
 from fastapi import APIRouter
 from .service import signup_user, login_user
+from .schemas import UserLogin, UserSignup
 
 router = APIRouter(prefix='/auth', tags=['Authentication'])
 
 @router.post("/signup/")
-def signup(email: str, password: str):
-    return signup_user(email, password)
+def sign_up(data: UserSignup):
+    return signup_user(data)
 
-def log(email: str, password: str):
-    return login_user(email, password)
+@router.post("/login/")
+def log(data: UserLogin):
+    return login_user(data)

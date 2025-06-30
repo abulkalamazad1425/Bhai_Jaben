@@ -1,6 +1,8 @@
 fastapi
 uvicorn
 sqlmodel
+pydantic
+pydantic[email]
 supabase
 python-dotenv
 httpx
