@@ -1,12 +1,16 @@
 from fastapi import HTTPException
-from .supabase_config import supabase
 from .schemas import UserProfile
 
+class UserService:
 
-def get_profile(user_id):
-    result = supabase.table("users").select("*").eq("id", user_id).single().execute()
+    def __init__(self, supabase_client):
+        self.supabase = supabase_client
 
-    if result.data is None:
-        raise HTTPException(status_code=404, detail="Profile not found")
 
-    return result.data
+    def get_profile(self, user_id):
+        result = self.supabase.table("users").select("*").eq("id", user_id).single().execute()
+
+        if result.data is None:
+            raise HTTPException(status_code=404, detail="Profile not found")
+
+        return result.data
