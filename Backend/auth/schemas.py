@@ -5,6 +5,7 @@ class UserSignup(BaseModel):
     email: EmailStr
     password: str
     phone: str
+    role: str
 
 
 class UserLogin(BaseModel):
