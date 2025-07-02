@@ -19,7 +19,8 @@ class AuthService:
             "id": user_id,
             "name": data.name,
             "phone": data.phone,
-            "role": data.role
+            "role": data.role,
+            "email": data.email
         }).execute()
 
         return auth
@@ -39,7 +40,8 @@ class AuthService:
             "id": user_id,
             "name": data.name,
             "phone": data.phone,
-            "role": data.role
+            "role": data.role,
+            "email": data.email
         }).execute()
 
         self.supabase.table("driver_profiles").insert({

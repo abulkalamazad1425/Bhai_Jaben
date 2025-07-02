@@ -5,7 +5,7 @@ from datetime import datetime
 class UserProfile(BaseModel):
     id: UUID
     name: str
-    email: EmailStr
+    email: str
     phone: str
     role: str  
     is_verified: bool
