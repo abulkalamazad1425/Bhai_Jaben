@@ -14,7 +14,7 @@ class JWTAuthHandler:
 
     async def get_current_user(
         self,
-        authorization: str = Header(...),
+        authorization: str = Header(...,alias="Authorization"),
         verify_exp: bool = True,
         verify_iss: bool = False,
         issuer: Optional[str] = None
