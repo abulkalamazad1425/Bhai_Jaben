@@ -2,6 +2,10 @@ from fastapi import HTTPException
 from postgrest.exceptions import APIError
 from ..supabase_client import supabase
 from ..schemas.driverSchemas import DriverProfileOut, DriverProfileUpdate
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+
+from uuid import UUID
 
 class DriverService:
     def __init__(self):
@@ -96,3 +100,66 @@ class DriverService:
             raise HTTPException(status_code=400, detail=f"Database error: {str(e)}")
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+
+
+     # 🚦 Update availability status
+    def toggle_availability(self, user_id: str, is_available: bool) -> dict:
+        try:
+            response = self.supabase.table("driver_profiles") \
+                .update({"is_available": is_available}) \
+                .eq("user_id", user_id) \
+                .execute()
+            if not response.data:
+                raise HTTPException(status_code=400, detail="Failed to update availability.")
+            return {"message": "Availability updated"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+
+    # ✅ Accept a ride
+    def accept_ride(self, user_id: str, ride_id: str) -> dict:
+        try:
+            # Check if ride is pending
+            ride_resp = self.supabase.table("rides") \
+                .select("*") \
+                .eq("ride_id", ride_id) \
+                .single() \
+                .execute()
+            ride = ride_resp.data
+            if not ride or ride["status"] != "pending":
+                raise HTTPException(status_code=400, detail="Ride not available or already taken")
+
+            # Update ride status and assign driver
+            update_resp = self.supabase.table("rides") \
+                .update({"status": "accepted", "driver_id": user_id}) \
+                .eq("ride_id", ride_id) \
+                .execute()
+            if not update_resp.data:
+                raise HTTPException(status_code=400, detail="Failed to accept ride")
+
+            return {"message": "Ride accepted"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+
+    # ❌ Reject a ride
+    def reject_ride(self, user_id: str, ride_id: str) -> dict:
+        try:
+            ride_resp = self.supabase.table("rides") \
+                .select("*") \
+                .eq("ride_id", ride_id) \
+                .single() \
+                .execute()
+            ride = ride_resp.data
+            if not ride or ride["status"] != "pending":
+                raise HTTPException(status_code=400, detail="Ride not available or already handled")
+
+            update_resp = self.supabase.table("rides") \
+                .update({"status": "cancelled", "driver_id": user_id}) \
+                .eq("ride_id", ride_id) \
+                .execute()
+            if not update_resp.data:
+                raise HTTPException(status_code=400, detail="Failed to reject ride")
+
+            return {"message": "Ride rejected"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+    

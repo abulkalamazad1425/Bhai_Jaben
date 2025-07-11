@@ -17,3 +17,10 @@ class DriverProfileOut(BaseModel):
     role: str
     license: str
     vehicle_info: str
+
+
+class AvailabilityUpdate(BaseModel):
+    is_available: bool
+
+class RideActionResponse(BaseModel):
+    message: str
