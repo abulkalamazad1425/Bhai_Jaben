@@ -1,5 +1,13 @@
 fastapi
 uvicorn
 sqlmodel
+pydantic
+pydantic[email]
+supabase
 python-dotenv
 httpx
+uuid
+sslcommerz-lib
+# pyjwt
+# passlib[bcrypt]
+python-jose[cryptography]
