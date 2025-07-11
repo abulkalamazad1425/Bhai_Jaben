@@ -1,4 +1,13 @@
 from pydantic import BaseModel
+from typing import Optional
+
+class DriverProfileUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    role: Optional[str] = None
+    license: Optional[str] = None
+    vehicle_info: Optional[str] = None
 
 class DriverProfileOut(BaseModel):
     id: str
