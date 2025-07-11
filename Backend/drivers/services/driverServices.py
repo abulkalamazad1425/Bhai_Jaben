@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 from postgrest.exceptions import APIError
 from ..supabase_client import supabase
-from ..schemas.driverSchemas import DriverProfileOut
+from ..schemas.driverSchemas import DriverProfileOut, DriverProfileUpdate
 
 class DriverService:
     def __init__(self):
@@ -53,5 +53,46 @@ class DriverService:
 
         except HTTPException:
             raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+        
+    def update_driver_profile(self, user_id: str, updates: DriverProfileUpdate) -> DriverProfileOut:
+        try:
+            user_updates = {}
+            profile_updates = {}
+
+            if updates.name is not None:
+                user_updates["name"] = updates.name
+            if updates.email is not None:
+                user_updates["email"] = updates.email
+            if updates.phone is not None:
+                user_updates["phone"] = updates.phone
+            if updates.role is not None:
+                user_updates["role"] = updates.role
+
+            if updates.license is not None:
+                profile_updates["license"] = updates.license
+            if updates.vehicle_info is not None:
+                profile_updates["vehicle_info"] = updates.vehicle_info
+
+            # Update users table
+            if user_updates:
+                user_resp = self.supabase.table("users").update(user_updates).eq("id", user_id).execute()
+                if user_resp.data is None:
+                    raise HTTPException(status_code=400, detail=f"Failed to update user data: {user_resp.error.message}")
+
+            # Update driver_profiles table
+            if profile_updates:
+                profile_resp = self.supabase.table("driver_profiles").update(profile_updates).eq("user_id", user_id).execute()
+                if profile_resp.data is None:
+                    raise HTTPException(status_code=400, detail=f"Failed to update driver profile: {profile_resp.error.message}")
+
+            # Return updated profile
+            return self.get_driver_profile(user_id)
+
+        except HTTPException:
+            raise
+        except APIError as e:
+            raise HTTPException(status_code=400, detail=f"Database error: {str(e)}")
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
