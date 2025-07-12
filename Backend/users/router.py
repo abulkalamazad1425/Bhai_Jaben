@@ -11,15 +11,9 @@ user_service = UserService(supabase)
 
 @router.get("/profile", response_model=UserProfile)
 
-def get_profile(currentUser=Depends(auth.get_current_user)) -> UserProfile:
-        
-    profile = user_service.get_profile(currentUser.id)
-    if not profile:
-        raise HTTPException(
-            status_code=404,
-            detail="User profile not found"
-        )
-    return profile
+def view_profile(current_user: dict = Depends(auth.get_current_user)) -> UserProfile:
+    return user_service.view_profile(current_user)
+    
         
 '''
 def get_profile(user_id) -> UserProfile:

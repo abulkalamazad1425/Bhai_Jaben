@@ -2,8 +2,9 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 import jwt
 import os
+from .schemas import UserId
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="", auto_error=False)  # Supabase's token endpoint
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")  # Supabase's token endpoint
 
 class SupabaseAuth:
     def __init__(self):
@@ -11,14 +12,11 @@ class SupabaseAuth:
         if not self.secret:
             raise RuntimeError("SUPABASE_JWT_SECRET not set")
 
-    async def get_current_user(self, token: str = Depends(oauth2_scheme)) -> dict:
+    def get_current_user(self, token: str = Depends(oauth2_scheme)):
         try:
             payload = jwt.decode(token, self.secret, algorithms=["HS256"])
-            return {
-                "id": payload["sub"],
-                "email": payload.get("email"),
-                "role": payload.get("role", "authenticated")
-            }
+            return  UserId(id=payload["sub"])
+                
         except jwt.ExpiredSignatureError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
