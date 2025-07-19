@@ -1,5 +1,5 @@
 from .schemas import UserLogin, UserSignup, DriverSignup, AuthResponse, UserBase
-from fastapi import Response
+from fastapi import Response, Request,  HTTPException
 
 class AuthService:
     def __init__(self, supabase_client):
@@ -95,4 +95,16 @@ class AuthService:
             samesite='lax'
         )
         return login_response.user
+
+    def get_current_user(self, request: Request):
+        token = request.cookies.get("access_token")
+        if not token:
+            raise HTTPException(401, "Not authenticated")
+        
+        try:
+            # Verify the token is still valid
+            user = self.supabase.auth.get_user(token)
+            return user.user.id
+        except Exception as e:
+            raise HTTPException(401, f"Invalid token: {str(e)}")
         

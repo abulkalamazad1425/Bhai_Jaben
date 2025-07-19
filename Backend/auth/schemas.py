@@ -39,3 +39,6 @@ class AuthResponse(BaseModel):
 class TokenData(BaseModel):
     access_token: str
     refresh_token: str
+
+class TokenResponse(BaseModel):
+    access_token: str

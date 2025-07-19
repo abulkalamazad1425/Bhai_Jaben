@@ -3,16 +3,16 @@ from typing import Any, Dict
 from .supabase_config import supabase
 from .service import UserService
 from .schemas import UserProfile
-from auth.SupabaseAuthHandler import auth
+from auth.service import AuthService
 
 router = APIRouter(prefix='/user', tags=['User'])
 
 user_service = UserService(supabase)
+auth_service = AuthService(supabase)
 
 @router.get("/profile", response_model=UserProfile)
-
-def view_profile(current_user: dict = Depends(auth.get_current_user)) -> UserProfile:
-    return user_service.view_profile(current_user)
+def view_profile(current_user_id: int = Depends(auth_service.get_current_user)) -> UserProfile:
+    return user_service.view_profile(current_user_id)
     
         
 '''
