@@ -26,7 +26,6 @@ def log(data: UserLogin, response: Response):
 
 @router.get("/test/")
 def test(request: Request):
-    # Get access token from cookies
     access_token = request.cookies.get("access_token")
     
     if access_token:

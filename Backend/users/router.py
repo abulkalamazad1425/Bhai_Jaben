@@ -1,14 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Any, Dict
-from .supabase_config import supabase
+from .database_config import DatabaseConfig
 from .service import UserService
 from .schemas import UserProfile
 from auth.services.login_service import LoginService
 
 router = APIRouter(prefix='/user', tags=['User'])
 
-user_service = UserService(supabase)
-login_service = LoginService(supabase)
+
+database_client=DatabaseConfig().get_client()
+user_service = UserService(database_client)
+login_service = LoginService(database_client)
 
 @router.get("/profile", response_model=UserProfile)
 def view_profile(current_user_id: int = Depends(login_service.get_current_user)) -> UserProfile:
