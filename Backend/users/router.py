@@ -3,15 +3,15 @@ from typing import Any, Dict
 from .supabase_config import supabase
 from .service import UserService
 from .schemas import UserProfile
-from auth.service import AuthService
+from auth.services.login_service import LoginService
 
 router = APIRouter(prefix='/user', tags=['User'])
 
 user_service = UserService(supabase)
-auth_service = AuthService(supabase)
+login_service = LoginService(supabase)
 
 @router.get("/profile", response_model=UserProfile)
-def view_profile(current_user_id: int = Depends(auth_service.get_current_user)) -> UserProfile:
+def view_profile(current_user_id: int = Depends(login_service.get_current_user)) -> UserProfile:
     return user_service.view_profile(current_user_id)
     
         

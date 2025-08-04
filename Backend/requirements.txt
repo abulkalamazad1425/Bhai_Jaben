@@ -6,3 +6,4 @@ pydantic[email]
 supabase
 python-dotenv
 httpx
+zope.interface

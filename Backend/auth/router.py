@@ -1,26 +1,28 @@
 from fastapi import APIRouter, Depends, Response, Request
 from fastapi.responses import JSONResponse
-#from fastapi.security import 
-from .supabase_config import supabase
-from .service import AuthService
+from .services.login_service import LoginService
+from .services.register_service import RegisterService
+from .database_config import DatabaseConfig
 from .schemas import UserLogin, UserSignup, DriverSignup, UserId, TokenResponse
-from .SupabaseAuthHandler import auth
 
 router = APIRouter(prefix='/auth', tags=['Authentication'])
 
-auth_service=AuthService(supabase)
+
+database_client=DatabaseConfig().get_client()
+login_service=LoginService(database_client)
+register_service=RegisterService(database_client)
 
 @router.post("/signup/")
-def sign_up(data: UserSignup):
-    return auth_service.signup_user(data)
+def sign_up(data: UserSignup, response: Response):
+    return register_service.signup_and_set_cookie(data,response)
 
 @router.post("/signup/driver/")
-def sign_up_driver(data: DriverSignup):
-    return auth_service.signup_driver(data)
+def sign_up_driver(data: DriverSignup, response: Response):
+    return register_service.signup_driver_and_set_cookie(data,response)
 
 @router.post("/login/")
 def log(data: UserLogin, response: Response):
-    return auth_service.login_and_set_cookie(data, response)
+    return login_service.login_and_set_cookie(data, response)
 
 @router.get("/test/")
 def test(request: Request):
@@ -39,4 +41,4 @@ def test(request: Request):
 
 @router.get("/currentuser/")
 def get_current_user(request: Request):
-    return auth_service.get_current_user(request)
+    return login_service.get_current_user(request)
