@@ -1,0 +1,172 @@
+from fastapi import HTTPException, status
+from typing import List, Dict
+from .repositories.ride_repository import RideRepository, RideApplicationRepository
+from .use_cases.ride_use_cases import CreateRideUseCase, ApplyForRideUseCase, GetPendingRidesUseCase, SelectDriverUseCase
+from .schemas import RideCreateRequest, RideResponse, RideApplicationRequest, RideApplicationResponse
+from .websocket.connection_manager import connection_manager
+from users.service import UserService
+from datetime import datetime
+
+class RideService:
+    def __init__(self, supabase_client):
+        self.ride_repo = RideRepository(supabase_client)
+        self.app_repo = RideApplicationRepository(supabase_client)
+        self.user_service = UserService(supabase_client)
+        
+        # Initialize use cases
+        self.create_ride_use_case = CreateRideUseCase(self.ride_repo, self.user_service)
+        self.apply_ride_use_case = ApplyForRideUseCase(self.ride_repo, self.app_repo, self.user_service)
+        self.get_pending_rides_use_case = GetPendingRidesUseCase(self.ride_repo, self.user_service)
+        self.select_driver_use_case = SelectDriverUseCase(self.ride_repo, self.app_repo)
+    
+    async def create_ride(self, user_id: str, request: RideCreateRequest) -> RideResponse:
+        ride = self.create_ride_use_case.execute(user_id, request)
+        
+        # Notify all drivers about new ride
+        await connection_manager.broadcast_to_drivers({
+            "type": "new_ride",
+            "message": "New ride request available",
+            "data": ride.dict()
+        }, await self._get_available_driver_ids())
+        
+        return ride
+    
+    async def apply_for_ride(self, driver_id: str, request: RideApplicationRequest) -> Dict[str, str]:
+        result = self.apply_ride_use_case.execute(driver_id, request)
+        
+        # Get ride details
+        ride = self.ride_repo.get_ride_by_id(request.ride_id)
+        if ride:
+            # Notify rider about new application
+            await connection_manager.send_personal_message({
+                "type": "new_application",
+                "message": "A driver has applied for your ride",
+                "data": {"ride_id": request.ride_id}
+            }, ride["user_id"])
+        
+        return result
+    
+    def get_pending_rides(self, driver_id: str) -> List[RideResponse]:
+        return self.get_pending_rides_use_case.execute(driver_id)
+    
+    async def select_driver(self, user_id: str, ride_id: str, driver_id: str) -> Dict[str, str]:
+        result = self.select_driver_use_case.execute(user_id, ride_id, driver_id)
+        
+        # Notify selected driver
+        await connection_manager.send_personal_message({
+            "type": "ride_confirmed",
+            "message": "You have been selected for a ride",
+            "data": {"ride_id": ride_id}
+        }, driver_id)
+        
+        # Notify other applicants that ride is no longer available
+        applications = self.app_repo.get_applications_by_ride_id(ride_id)
+        for app in applications:
+            if app["driver_id"] != driver_id:
+                await connection_manager.send_personal_message({
+                    "type": "ride_unavailable",
+                    "message": "Ride is no longer available",
+                    "data": {"ride_id": ride_id}
+                }, app["driver_id"])
+        
+        return result
+    
+    async def start_ride(self, driver_id: str, ride_id: str) -> Dict[str, str]:
+        ride = self.ride_repo.get_ride_by_id(ride_id)
+        if not ride or ride["driver_id"] != driver_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to start this ride"
+            )
+        
+        if ride["status"] != "confirmed":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Ride must be confirmed to start"
+            )
+        
+        self.ride_repo.update_ride(ride_id, {
+            "status": "ongoing",
+            "start_time": datetime.now().isoformat()
+        })
+        
+        # Notify rider
+        await connection_manager.send_personal_message({
+            "type": "ride_started",
+            "message": "Your ride has started",
+            "data": {"ride_id": ride_id}
+        }, ride["user_id"])
+        
+        return {"message": "Ride started successfully"}
+    
+    async def complete_ride(self, driver_id: str, ride_id: str) -> Dict[str, str]:
+        ride = self.ride_repo.get_ride_by_id(ride_id)
+        if not ride or ride["driver_id"] != driver_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to complete this ride"
+            )
+        
+        if ride["status"] != "ongoing":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Ride must be ongoing to complete"
+            )
+        
+        self.ride_repo.update_ride(ride_id, {
+            "status": "completed",
+            "end_time": datetime.now().isoformat(),
+            "payment_status": "paid"
+        })
+        
+        # Notify rider
+        await connection_manager.send_personal_message({
+            "type": "ride_completed",
+            "message": "Your ride has been completed",
+            "data": {"ride_id": ride_id}
+        }, ride["user_id"])
+        
+        return {"message": "Ride completed successfully"}
+    
+    async def cancel_ride(self, user_id: str, ride_id: str, cancel_reason: str) -> Dict[str, str]:
+        ride = self.ride_repo.get_ride_by_id(ride_id)
+        if not ride:
+            raise HTTPException(status_code=404, detail="Ride not found")
+        
+        # Check permissions
+        if user_id not in [ride["user_id"], ride.get("driver_id")]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to cancel this ride"
+            )
+        
+        if ride["status"] not in ["pending", "confirmed", "ongoing"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Ride cannot be cancelled in current status"
+            )
+        
+        self.ride_repo.update_ride(ride_id, {
+            "status": "cancelled",
+            "cancel_reason": cancel_reason
+        })
+        
+        # Notify other party
+        other_user = ride["driver_id"] if user_id == ride["user_id"] else ride["user_id"]
+        if other_user:
+            await connection_manager.send_personal_message({
+                "type": "ride_cancelled",
+                "message": "The ride has been cancelled",
+                "data": {"ride_id": ride_id, "reason": cancel_reason}
+            }, other_user)
+        
+        return {"message": "Ride cancelled successfully"}
+    
+    async def _get_available_driver_ids(self) -> List[str]:
+        # Get all active drivers from connected users
+        # This is a simplified implementation
+        driver_ids = []
+        for user_id in connection_manager.active_connections.keys():
+            if self.user_service.verify_user_role(user_id, "driver"):
+                driver_ids.append(user_id)
+        return driver_ids

@@ -36,7 +36,7 @@ class DriverService:
             driver_data = driver_response.data[0]
 
             return DriverProfileResponse(
-                id=user_data["id"],
+                user_id=user_data["id"],
                 name=user_data["name"],
                 email=user_data["email"],
                 phone=user_data["phone"],
