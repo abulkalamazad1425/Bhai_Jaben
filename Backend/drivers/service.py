@@ -103,3 +103,46 @@ class DriverService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=str(e)
             )
+    # New method for rides service to get driver profile
+    def get_driver_profile_for_ride(self, driver_id: str) -> Dict:
+        """Get driver profile data for ride applications"""
+        try:
+            # Get user data from users service
+            user_data = self.user_service.get_user_data(driver_id)
+
+            # Verify user is a driver
+            if user_data["role"] != "driver":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="User is not a driver"
+                )
+
+            # Get driver profile data
+            driver_response = self.supabase.table('driver_profiles') \
+                .select("*") \
+                .eq('user_id', driver_id) \
+                .execute()
+
+            if not driver_response.data:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Driver profile not found"
+                )
+
+            driver_data = driver_response.data[0]
+
+            return {
+                "name": user_data["name"],
+                "phone": user_data["phone"],
+                "license": driver_data["license"],
+                "vehicle_info": driver_data["vehicle_info"],
+                "is_approved": driver_data["is_approved"]
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e)
+            )

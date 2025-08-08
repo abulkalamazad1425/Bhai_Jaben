@@ -4,7 +4,9 @@ from .repositories.ride_repository import RideRepository, RideApplicationReposit
 from .use_cases.ride_use_cases import CreateRideUseCase, ApplyForRideUseCase, GetPendingRidesUseCase, SelectDriverUseCase
 from .schemas import RideCreateRequest, RideResponse, RideApplicationRequest, RideApplicationResponse
 from .websocket.connection_manager import connection_manager
+from .domain.services import LocationService
 from users.service import UserService
+from drivers.service import DriverService  # Import driver service
 from datetime import datetime
 
 class RideService:
@@ -12,6 +14,8 @@ class RideService:
         self.ride_repo = RideRepository(supabase_client)
         self.app_repo = RideApplicationRepository(supabase_client)
         self.user_service = UserService(supabase_client)
+        self.driver_service = DriverService(supabase_client)  # Add driver service
+        self.location_service = LocationService()
         
         # Initialize use cases
         self.create_ride_use_case = CreateRideUseCase(self.ride_repo, self.user_service)
@@ -49,6 +53,58 @@ class RideService:
     def get_pending_rides(self, driver_id: str) -> List[RideResponse]:
         return self.get_pending_rides_use_case.execute(driver_id)
     
+    def get_ride_applications(self, user_id: str, ride_id: str) -> List[RideApplicationResponse]:
+        try:
+            # Verify user owns the ride
+            ride = self.ride_repo.get_ride_by_id(ride_id)
+            if not ride or ride["user_id"] != user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You don't have permission to view applications for this ride"
+                )
+            
+            # Get applications (without driver details)
+            applications = self.app_repo.get_applications_by_ride_id_simple(ride_id)
+            
+            result = []
+            for app in applications:
+                try:
+                    # Get driver profile from driver service
+                    driver_profile = self.driver_service.get_driver_profile_for_ride(app["driver_id"])
+                    
+                    # Parse location data
+                    location_data = self.location_service.parse_location(app.get("locations", "{}"))
+                    
+                    result.append(RideApplicationResponse(
+                        application_id=app["application_id"],
+                        ride_id=app["ride_id"],
+                        driver_id=app["driver_id"],
+                        applied_at=app["applied_at"],
+                        driver_name=driver_profile["name"],
+                        driver_phone=driver_profile["phone"],
+                        license=driver_profile["license"],
+                        vehicle_info=driver_profile["vehicle_info"],
+                        current_location={
+                            "latitude": location_data.get("latitude", 0.0),
+                            "longitude": location_data.get("longitude", 0.0),
+                            "address": location_data.get("address")
+                        }
+                    ))
+                except Exception as e:
+                    # Skip applications where driver profile cannot be retrieved
+                    print(f"Error getting driver profile for {app['driver_id']}: {str(e)}")
+                    continue
+            
+            return result
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e)
+            )
+    
     async def select_driver(self, user_id: str, ride_id: str, driver_id: str) -> Dict[str, str]:
         result = self.select_driver_use_case.execute(user_id, ride_id, driver_id)
         
@@ -60,7 +116,7 @@ class RideService:
         }, driver_id)
         
         # Notify other applicants that ride is no longer available
-        applications = self.app_repo.get_applications_by_ride_id(ride_id)
+        applications = self.app_repo.get_applications_by_ride_id_simple(ride_id)
         for app in applications:
             if app["driver_id"] != driver_id:
                 await connection_manager.send_personal_message({
@@ -164,9 +220,11 @@ class RideService:
     
     async def _get_available_driver_ids(self) -> List[str]:
         # Get all active drivers from connected users
-        # This is a simplified implementation
         driver_ids = []
         for user_id in connection_manager.active_connections.keys():
-            if self.user_service.verify_user_role(user_id, "driver"):
-                driver_ids.append(user_id)
+            try:
+                if self.user_service.verify_user_role(user_id, "driver"):
+                    driver_ids.append(user_id)
+            except:
+                continue
         return driver_ids

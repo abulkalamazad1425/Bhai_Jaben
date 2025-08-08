@@ -61,8 +61,16 @@ class RideApplicationRepository:
         raise Exception("Failed to create application")
     
     def get_applications_by_ride_id(self, ride_id: str) -> List[Dict]:
+        # Old method with joins (keep for backward compatibility)
         response = self.supabase.table('ride_applications')\
             .select("*, users(name, phone), driver_profiles(license, vehicle_info)")\
+            .eq('ride_id', ride_id).execute()
+        return response.data
+    
+    def get_applications_by_ride_id_simple(self, ride_id: str) -> List[Dict]:
+        # New method without joins - just get application data
+        response = self.supabase.table('ride_applications')\
+            .select("*")\
             .eq('ride_id', ride_id).execute()
         return response.data
     
@@ -70,3 +78,8 @@ class RideApplicationRepository:
         response = self.supabase.table('ride_applications')\
             .select("*").eq('ride_id', ride_id).eq('driver_id', driver_id).execute()
         return response.data[0] if response.data else None
+    
+    def get_applications_by_driver_id(self, driver_id: str) -> List[Dict]:
+        response = self.supabase.table('ride_applications')\
+            .select("*").eq('driver_id', driver_id).execute()
+        return response.data
