@@ -1,27 +1,18 @@
 from fastapi import HTTPException, status
 from .schemas import DriverProfileResponse, DriverProfileUpdate
+from users.service import UserService
 from typing import Dict
 
 class DriverService:
 
     def __init__(self, supabase_client):
         self.supabase = supabase_client
+        self.user_service = UserService(supabase_client)
 
     def view_driver_profile(self, current_user_id) -> DriverProfileResponse:
         try:
-            # Get user data from users table
-            user_response = self.supabase.table('users') \
-                .select("*") \
-                .eq('id', current_user_id) \
-                .execute()
-
-            if not user_response.data:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="User not found"
-                )
-
-            user_data = user_response.data[0]
+            # Get user data from users service
+            user_data = self.user_service.get_user_data(current_user_id)
 
             # Check if user is a driver
             if user_data["role"] != "driver":
@@ -45,7 +36,7 @@ class DriverService:
             driver_data = driver_response.data[0]
 
             return DriverProfileResponse(
-                user_id=user_data["id"],
+                id=user_data["id"],
                 name=user_data["name"],
                 email=user_data["email"],
                 phone=user_data["phone"],
@@ -67,25 +58,14 @@ class DriverService:
 
     def update_driver_profile(self, current_user_id, data: DriverProfileUpdate) -> Dict[str, str]:
         try:
-            # First verify user exists and is a driver
-            user_response = self.supabase.table('users') \
-                .select("role") \
-                .eq('id', current_user_id) \
-                .execute()
-
-            if not user_response.data:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="User not found"
-                )
-
-            if user_response.data[0]["role"] != "driver":
+            # Verify user exists and is a driver using user service
+            if not self.user_service.verify_user_role(current_user_id, "driver"):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="User is not a driver"
                 )
 
-            # Update user table fields if provided
+            # Update user table fields if provided (through user service)
             user_updates = {}
             if data.name is not None:
                 user_updates["name"] = data.name
@@ -93,16 +73,7 @@ class DriverService:
                 user_updates["phone"] = data.phone
 
             if user_updates:
-                user_update_response = self.supabase.table('users') \
-                    .update(user_updates) \
-                    .eq('id', current_user_id) \
-                    .execute()
-
-                if not user_update_response.data:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Failed to update user information"
-                    )
+                self.user_service.update_user_data(current_user_id, user_updates)
 
             # Update driver profile fields if provided
             driver_updates = {}
