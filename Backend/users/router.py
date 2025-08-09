@@ -1,51 +1,25 @@
 from fastapi import APIRouter, Depends, HTTPException
-from typing import Any, Dict
-from .database_config import DatabaseConfig
+from typing import Dict
 from .service import UserService
-from .schemas import UserProfile
+from .schemas import UserProfile, UserProfileUpdate
 from auth.services.login_service import LoginService
+from .database_config import DatabaseConfig
 
-router = APIRouter(prefix='/user', tags=['User'])
+router = APIRouter(prefix='/users', tags=['Users'])
 
-
-database_client=DatabaseConfig().get_client()
+database_client = DatabaseConfig().get_client()
 user_service = UserService(database_client)
 login_service = LoginService(database_client)
 
 @router.get("/profile", response_model=UserProfile)
-def view_profile(current_user_id: int = Depends(login_service.get_current_user)) -> UserProfile:
+def view_profile(current_user_id: str = Depends(login_service.get_current_user)) -> UserProfile:
     return user_service.view_profile(current_user_id)
+
+@router.put("/profile")
+def update_profile(update_data: UserProfileUpdate,current_user_id: str = Depends(login_service.get_current_user)) -> Dict[str, str]:
+    return user_service.update_profile(current_user_id, update_data)
+
+@router.get("/profile/{user_id}", response_model=UserProfile)
+def get_user_profile_by_id(user_id: str,current_user_id: str = Depends(login_service.get_current_user)) -> UserProfile:
     
-        
-'''
-def get_profile(user_id) -> UserProfile:
-    """
-    Get the current user's profile.
-    
-    Requires valid JWT authentication token.
-    """
-    try:
-        
-        if not user_id:
-            raise HTTPException(
-                status_code=401,
-                detail="User ID not found in token"
-            )
-        
-        profile = user_service.get_profile(user_id)
-        if not profile:
-            raise HTTPException(
-                status_code=404,
-                detail="User profile not found"
-            )
-            
-        return profile
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error retrieving profile: {str(e)}"
-        )
-'''
+    return user_service.get_user_profile_by_id(user_id)

@@ -1,12 +1,12 @@
 from fastapi import HTTPException, status
-from typing import List, Dict
+from typing import List, Dict, Optional
 from .repositories.ride_repository import RideRepository, RideApplicationRepository
 from .use_cases.ride_use_cases import CreateRideUseCase, ApplyForRideUseCase, GetPendingRidesUseCase, SelectDriverUseCase
 from .schemas import RideCreateRequest, RideResponse, RideApplicationRequest, RideApplicationResponse
 from .websocket.connection_manager import connection_manager
 from .domain.services import LocationService
 from users.service import UserService
-from drivers.service import DriverService  # Import driver service
+from drivers.service import DriverService
 from datetime import datetime
 
 class RideService:
@@ -172,7 +172,7 @@ class RideService:
         self.ride_repo.update_ride(ride_id, {
             "status": "completed",
             "end_time": datetime.now().isoformat(),
-            "payment_status": "paid"
+           
         })
         
         # Notify rider
@@ -228,3 +228,152 @@ class RideService:
             except:
                 continue
         return driver_ids
+    
+    # New methods for payment service
+    def get_ride_for_payment(self, ride_id: str) -> Optional[Dict]:
+        """Get ride details for payment processing"""
+        try:
+            ride = self.ride_repo.get_ride_by_id(ride_id)
+            return ride
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error fetching ride: {str(e)}"
+            )
+
+    def verify_driver_for_ride(self, driver_id: str, ride_id: str) -> bool:
+        """Verify if driver is assigned to the ride"""
+        try:
+            ride = self.ride_repo.get_ride_by_id(ride_id)
+            if not ride:
+                return False
+            return ride.get("driver_id") == driver_id
+        except Exception:
+            return False
+
+    def verify_rider_for_ride(self, user_id: str, ride_id: str) -> bool:
+        """Verify if user is the rider for the ride"""
+        try:
+            ride = self.ride_repo.get_ride_by_id(ride_id)
+            if not ride:
+                return False
+            return ride.get("user_id") == user_id
+        except Exception:
+            return False
+
+    def update_ride_payment_status(self, ride_id: str, payment_status: str) -> Dict[str, str]:
+        """Update payment status of a ride"""
+        try:
+            # Validate payment status
+            valid_statuses = ['pending', 'paid', 'failed', 'refunded']
+            if payment_status not in valid_statuses:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid payment status. Must be one of: {valid_statuses}"
+                )
+
+            # Check if ride exists
+            ride = self.ride_repo.get_ride_by_id(ride_id)
+            if not ride:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Ride not found"
+                )
+
+            # Update payment status
+            updated_ride = self.ride_repo.update_ride(ride_id, {
+                "payment_status": payment_status,
+                "updated_at": datetime.now().isoformat()
+            })
+
+            if not updated_ride:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Failed to update ride payment status"
+                )
+
+            return {"message": f"Ride payment status updated to {payment_status}"}
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error updating payment status: {str(e)}"
+            )
+
+    def get_ride_payment_details(self, ride_id: str) -> Dict:
+        """Get ride payment-related details"""
+        try:
+            ride = self.ride_repo.get_ride_by_id(ride_id)
+            if not ride:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Ride not found"
+                )
+
+            return {
+                "ride_id": ride["ride_id"],
+                "user_id": ride["user_id"],
+                "driver_id": ride.get("driver_id"),
+                "status": ride["status"],
+                "payment_status": ride["payment_status"],
+                "fare": ride.get("fare"),
+                "pickup": ride["pickup"],
+                "drop": ride["drop"]
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error fetching ride payment details: {str(e)}"
+            )
+
+    def validate_ride_for_payment(self, ride_id: str) -> Dict:
+        """Validate if ride is ready for payment"""
+        try:
+            ride = self.ride_repo.get_ride_by_id(ride_id)
+            if not ride:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Ride not found"
+                )
+
+            # Check if ride is completed
+            if ride["status"] != "completed":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Ride must be completed before payment"
+                )
+
+            # Check if already paid
+            if ride["payment_status"] == "paid":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Payment already completed"
+                )
+
+            # Check if fare is set
+            if not ride.get("fare") or ride["fare"] <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid ride fare"
+                )
+
+            return {
+                "valid": True,
+                "ride_id": ride_id,
+                "fare": ride["fare"],
+                "user_id": ride["user_id"],
+                "driver_id": ride.get("driver_id")
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error validating ride for payment: {str(e)}"
+            )

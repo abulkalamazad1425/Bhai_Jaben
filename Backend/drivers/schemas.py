@@ -1,15 +1,16 @@
-from typing import Optional
-from uuid import UUID
 from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
 
 class DriverProfileResponse(BaseModel):
-    user_id: UUID
+    user_id: str
     name: str
     email: str
     phone: str
+    role: str
+    created_at: str
     license: str
     vehicle_info: str
-    is_verified: bool
     is_approved: bool
 
 class DriverProfileUpdate(BaseModel):

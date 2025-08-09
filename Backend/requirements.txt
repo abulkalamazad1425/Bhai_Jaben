@@ -7,3 +7,4 @@ supabase
 python-dotenv
 httpx
 zope.interface
+requests
