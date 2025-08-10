@@ -8,3 +8,4 @@ python-dotenv
 httpx
 zope.interface
 requests
+python-multipart

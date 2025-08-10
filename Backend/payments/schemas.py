@@ -13,7 +13,7 @@ class PaymentBase(BaseModel):
         if v not in ['cash', 'online']:
             raise ValueError('Payment method must be either "cash" or "online"')
         return v
-    
+
     @validator('amount')
     def validate_amount(cls, v):
         if v <= 0:
@@ -42,7 +42,7 @@ class PaymentResponse(BaseModel):
 class OnlinePaymentInitResponse(BaseModel):
     payment_url: str
     session_key: str
-    payment_id: str
+    # payment_id: str
     
 class SSLCommerzRequest(BaseModel):
     store_id: str
@@ -75,7 +75,7 @@ class SSLCommerzResponse(BaseModel):
     GatewayPageURL: Optional[str] = None
     storeBanner: Optional[str] = None
     store_logo: Optional[str] = None
-    desc: Optional[str] = None
+    desc: Optional[List] = None
     is_direct_pay_enable: Optional[str] = None
 
 class PaymentCallbackRequest(BaseModel):
@@ -107,4 +107,3 @@ class PaymentCancelResponse(BaseModel):
     ride_id: Optional[str] = None
     payment_id: Optional[str] = None
     status: str
-    

@@ -1,8 +1,14 @@
 from fastapi import HTTPException, status
 from typing import List, Dict, Optional
+import uuid
 from .repositories.ride_repository import RideRepository, RideApplicationRepository
+from .repositories.rating_repository import RatingRepository
 from .use_cases.ride_use_cases import CreateRideUseCase, ApplyForRideUseCase, GetPendingRidesUseCase, SelectDriverUseCase
-from .schemas import RideCreateRequest, RideResponse, RideApplicationRequest, RideApplicationResponse
+from .schemas import (
+    RideCreateRequest, RideResponse, RideApplicationRequest, RideApplicationResponse,
+    RideRatingRequest, RideRatingResponse, RideWithRatingsResponse, 
+    UserRatingsSummary, DriverRatingsSummary
+)
 from .websocket.connection_manager import connection_manager
 from .domain.services import LocationService
 from users.service import UserService
@@ -13,8 +19,9 @@ class RideService:
     def __init__(self, supabase_client):
         self.ride_repo = RideRepository(supabase_client)
         self.app_repo = RideApplicationRepository(supabase_client)
+        self.rating_repo = RatingRepository(supabase_client)  # Add rating repository
         self.user_service = UserService(supabase_client)
-        self.driver_service = DriverService(supabase_client)  # Add driver service
+        self.driver_service = DriverService(supabase_client)
         self.location_service = LocationService()
         
         # Initialize use cases
@@ -22,6 +29,9 @@ class RideService:
         self.apply_ride_use_case = ApplyForRideUseCase(self.ride_repo, self.app_repo, self.user_service)
         self.get_pending_rides_use_case = GetPendingRidesUseCase(self.ride_repo, self.user_service)
         self.select_driver_use_case = SelectDriverUseCase(self.ride_repo, self.app_repo)
+       
+        
+        
     
     async def create_ride(self, user_id: str, request: RideCreateRequest) -> RideResponse:
         ride = self.create_ride_use_case.execute(user_id, request)
@@ -172,15 +182,22 @@ class RideService:
         self.ride_repo.update_ride(ride_id, {
             "status": "completed",
             "end_time": datetime.now().isoformat(),
-           
+            "completed_at": datetime.now().isoformat()  # Add completion timestamp
         })
         
         # Notify rider
         await connection_manager.send_personal_message({
             "type": "ride_completed",
-            "message": "Your ride has been completed",
-            "data": {"ride_id": ride_id}
+            "message": "Your ride has been completed. You can now rate your driver!",
+            "data": {"ride_id": ride_id, "can_rate": True}
         }, ride["user_id"])
+        
+        # Notify driver they can rate the rider
+        await connection_manager.send_personal_message({
+            "type": "ride_completed",
+            "message": "Ride completed successfully. You can now rate the rider!",
+            "data": {"ride_id": ride_id, "can_rate": True}
+        }, driver_id)
         
         return {"message": "Ride completed successfully"}
     
@@ -377,3 +394,258 @@ class RideService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error validating ride for payment: {str(e)}"
             )
+    
+    # Rating methods
+    async def rate_ride(self, rater_id: str, request: RideRatingRequest) -> RideRatingResponse:
+        """Allow user or driver to rate after ride completion"""
+        try:
+            ride = self.ride_repo.get_ride_by_id(request.ride_id)
+            if not ride:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Ride not found"
+                )
+            
+            # Check if ride is completed
+            if ride["status"] != "completed":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Can only rate completed rides"
+                )
+            
+            # Determine rater type and who they're rating
+            rater_type = None
+            rated_user_id = None
+            
+            if rater_id == ride["user_id"]:
+                # User is rating the driver
+                rater_type = "user"
+                rated_user_id = ride["driver_id"]
+                if not rated_user_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="No driver assigned to this ride"
+                    )
+            elif rater_id == ride["driver_id"]:
+                # Driver is rating the user
+                rater_type = "driver"
+                rated_user_id = ride["user_id"]
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You can only rate rides you participated in"
+                )
+            
+            # Check if already rated
+            existing_rating = self.rating_repo.get_rating_by_ride_and_rater(
+                request.ride_id, rater_id
+            )
+            if existing_rating:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="You have already rated this ride"
+                )
+            
+            # Create rating
+            rating_data = {
+                "rating_id": str(uuid.uuid4()),
+                "ride_id": request.ride_id,
+                "rater_id": rater_id,
+                "rater_type": rater_type,
+                "rated_user_id": rated_user_id,
+                "rating": request.rating,
+                "comment": request.comment,
+                "created_at": datetime.now().isoformat()
+            }
+            
+            rating = self.rating_repo.create_rating(rating_data)
+            
+            # Notify the rated user
+            await connection_manager.send_personal_message({
+                "type": "new_rating",
+                "message": f"You received a {request.rating}-star rating!",
+                "data": {
+                    "ride_id": request.ride_id,
+                    "rating": request.rating,
+                    "rater_type": rater_type
+                }
+            }, rated_user_id)
+            
+            return RideRatingResponse(**rating)
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error creating rating: {str(e)}"
+            )
+
+    def get_ride_with_ratings(self, current_user_id: str, ride_id: str) -> RideWithRatingsResponse:
+        """Get ride details with rating information"""
+        try:
+            ride = self.ride_repo.get_ride_by_id(ride_id)
+            if not ride:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Ride not found"
+                )
+            
+            # Check if user has permission to view this ride
+            if current_user_id not in [ride["user_id"], ride.get("driver_id")]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You don't have permission to view this ride"
+                )
+            
+            # Get ratings for this ride
+            ratings = self.rating_repo.get_ratings_by_ride_id(ride_id)
+            
+            user_rating = None
+            driver_rating = None
+            
+            for rating in ratings:
+                if rating["rater_type"] == "user":
+                    user_rating = RideRatingResponse(**rating)
+                elif rating["rater_type"] == "driver":
+                    driver_rating = RideRatingResponse(**rating)
+            
+            # Determine if current user can rate
+            can_rate_driver = False
+            can_rate_user = False
+            
+            if ride["status"] == "completed":
+                if current_user_id == ride["user_id"] and not user_rating:
+                    can_rate_driver = True
+                elif current_user_id == ride["driver_id"] and not driver_rating:
+                    can_rate_user = True
+            
+            return RideWithRatingsResponse(
+                ride_id=ride["ride_id"],
+                user_id=ride["user_id"],
+                driver_id=ride.get("driver_id"),
+                pickup=ride["pickup"],
+                drop=ride["drop"],
+                fare=ride.get("fare"),
+                status=ride["status"],
+                payment_status=ride["payment_status"],
+                created_at=ride["created_at"],
+                completed_at=ride.get("completed_at"),
+                user_rating=user_rating,
+                driver_rating=driver_rating,
+                can_rate_driver=can_rate_driver,
+                can_rate_user=can_rate_user
+            )
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error fetching ride with ratings: {str(e)}"
+            )
+
+    def get_user_ratings_summary(self, user_id: str) -> UserRatingsSummary:
+        """Get summary of ratings received by a user"""
+        try:
+            ratings = self.rating_repo.get_ratings_for_user(user_id)
+            
+            if not ratings:
+                return UserRatingsSummary(
+                    user_id=user_id,
+                    total_ratings=0,
+                    average_rating=0.0,
+                    ratings_breakdown={1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+                )
+            
+            total_ratings = len(ratings)
+            total_score = sum(rating["rating"] for rating in ratings)
+            average_rating = round(total_score / total_ratings, 2)
+            
+            # Count ratings by star value
+            breakdown = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+            for rating in ratings:
+                breakdown[rating["rating"]] += 1
+            
+            return UserRatingsSummary(
+                user_id=user_id,
+                total_ratings=total_ratings,
+                average_rating=average_rating,
+                ratings_breakdown=breakdown
+            )
+            
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error fetching user ratings: {str(e)}"
+            )
+
+    def get_driver_ratings_summary(self, driver_id: str) -> DriverRatingsSummary:
+        """Get summary of ratings received by a driver"""
+        try:
+            ratings = self.rating_repo.get_ratings_for_driver(driver_id)
+            
+            if not ratings:
+                return DriverRatingsSummary(
+                    driver_id=driver_id,
+                    total_ratings=0,
+                    average_rating=0.0,
+                    ratings_breakdown={1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+                )
+            
+            total_ratings = len(ratings)
+            total_score = sum(rating["rating"] for rating in ratings)
+            average_rating = round(total_score / total_ratings, 2)
+            
+            # Count ratings by star value
+            breakdown = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+            for rating in ratings:
+                breakdown[rating["rating"]] += 1
+            
+            return DriverRatingsSummary(
+                driver_id=driver_id,
+                total_ratings=total_ratings,
+                average_rating=average_rating,
+                ratings_breakdown=breakdown
+            )
+            
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error fetching driver ratings: {str(e)}"
+            )
+
+    def get_my_completed_rides(self, current_user_id: str) -> List[RideWithRatingsResponse]:
+        """Get all completed rides for current user with rating info"""
+        try:
+            # Check if user is a driver or regular user
+            try:
+                is_driver = self.user_service.verify_user_role(current_user_id, "driver")
+            except:
+                is_driver = False
+            
+            if is_driver:
+                # Get rides where user is the driver
+                rides = self.ride_repo.get_rides_by_driver_id(current_user_id, status="completed")
+            else:
+                # Get rides where user is the rider
+                rides = self.ride_repo.get_rides_by_user_id(current_user_id, status="completed")
+            
+            result = []
+            for ride in rides:
+                try:
+                    ride_with_ratings = self.get_ride_with_ratings(current_user_id, ride["ride_id"])
+                    result.append(ride_with_ratings)
+                except Exception as e:
+                    # Skip rides that can't be processed
+                    print(f"Error processing ride {ride['ride_id']}: {str(e)}")
+                    continue
+            
+            return result
+            
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error fetching completed rides: {str(e)}"
+            )
+
