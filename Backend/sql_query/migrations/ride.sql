@@ -34,3 +34,16 @@ CREATE INDEX idx_rides_user_id ON rides(user_id);
 CREATE INDEX idx_rides_driver_id ON rides(driver_id);
 CREATE INDEX idx_ride_applications_ride_id ON ride_applications(ride_id);
 CREATE INDEX idx_ride_applications_driver_id ON ride_applications(driver_id);
+
+
+CREATE TABLE ride_ratings (
+    rating_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ride_id UUID REFERENCES rides(ride_id) NOT NULL,
+    rater_id UUID NOT NULL, -- ID of person giving the rating
+    rater_type TEXT CHECK (rater_type IN ('user', 'driver')) NOT NULL,
+    rated_user_id UUID NOT NULL, -- ID of person being rated
+    rating INTEGER CHECK (rating >= 1 AND rating <= 5) NOT NULL,
+    comment TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
