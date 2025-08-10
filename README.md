@@ -219,7 +219,7 @@ Frontend/
 
 - API docs: `/docs`
 - Issues: GitHub
-- Email: support@ridesharing-app.com
+- Email: bsse1425@iit.du.ac.bd , bsse1452@iit.du.ac.bd
 
 ---
 
