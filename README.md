@@ -1,6 +1,7 @@
 RideSharingApp_UberClone
 A comprehensive ride-sharing application backend built with FastAPI, featuring real-time ride matching, payment processing, and rating systems.
 
+
 🚀 Project Overview
 This is a full-featured Uber-like ride-sharing platform backend that provides all the essential functionalities needed for a modern ride-sharing service. Built with FastAPI for high performance and scalability, it includes real-time communication, secure payment processing, and a comprehensive rating system.
 
