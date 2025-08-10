@@ -151,6 +151,52 @@ Frontend/
 
 ---
 
+## 🔗 API Endpoints
+
+> All endpoints are available under `/docs` for interactive testing.
+
+### Authentication
+- `POST /auth/register` – Register a new user/driver
+- `POST /auth/login` – Login and receive JWT token
+
+### Users
+- `GET /users/me` – Get current user profile
+- `PUT /users/update` – Update user profile
+
+### Drivers
+- `GET /drivers/me` – Get current driver profile
+- `PUT /drivers/update` – Update driver profile
+
+### Rides
+- `POST /rides/create` – Create a new ride request
+- `GET /rides/available` – List available rides
+- `POST /rides/apply` – Driver applies for a ride
+- `POST /rides/select_driver` – Rider selects a driver
+- `POST /rides/start` – Start a ride
+- `POST /rides/complete` – Complete a ride
+- `POST /rides/cancel` – Cancel a ride
+
+### WebSocket
+- `/rides/ws` – Real-time ride updates and notifications
+
+### Payments
+- `POST /payments/initiate` – Initiate payment (cash/SSLCommerz)
+- `GET /payments/status` – Check payment status
+
+### Ratings
+- `POST /rides/rate` – Submit a rating for a ride
+- `GET /rides/ratings` – Get ratings for a ride/user/driver
+
+### Admin
+- `GET /admin/dashboard` – Admin dashboard overview
+- `GET /admin/users` – Manage users
+- `GET /admin/drivers` – Manage drivers
+- `GET /admin/rides` – Manage rides
+- `GET /admin/payments` – Manage payments
+- `GET /admin/report` – Generate reports
+
+---
+
 ## 🔒 Security
 
 - Password hashing
@@ -190,4 +236,4 @@ Frontend/
 
 Built with ❤️ using FastAPI and modern Python practices.
 
-⭐ If you find this project useful, please
+⭐ If you find this project useful, please give
