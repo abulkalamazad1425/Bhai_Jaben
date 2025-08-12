@@ -455,7 +455,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **API Documentation**: Available at `/docs` when running the server
 - **Issues**: Report bugs and request features via GitHub Issues
 - **Wiki**: Detailed documentation in the project wiki
-- **Email**: support@ridesharing-app.com
+- **Email**: bsse1452@iit.du.ac.bd ,bsse1425@iit.du.ac.bd ,bsse1418@iit.du.ac.bd
 
 ## 🔮 Future Enhancements
 
