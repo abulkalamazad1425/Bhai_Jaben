@@ -13,7 +13,7 @@ from .websocket.connection_manager import connection_manager
 from .domain.services import LocationService
 from users.service import UserService
 from drivers.service import DriverService
-from datetime import datetime
+from datetime import datetime, timedelta
 
 class RideService:
     def __init__(self, supabase_client):
@@ -648,4 +648,138 @@ class RideService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error fetching completed rides: {str(e)}"
             )
+    
+    def get_all_rides_admin(self, status_filter: Optional[str] = None, page: int = 1, limit: int = 50) -> Dict:
+        """Get all rides for admin with optional status filter"""
+        try:
+            offset = (page - 1) * limit
+            
+            # Build query
+            query = self.supabase.table('rides')\
+                .select('''
+                    *,
+                    users:user_id(name),
+                    drivers:driver_id(name)
+                ''')
+            
+            # Apply status filter if provided
+            if status_filter:
+                query = query.eq('status', status_filter)
+            
+            # Get total count
+            count_query = self.supabase.table('rides').select('*', count='exact')
+            if status_filter:
+                count_query = count_query.eq('status', status_filter)
+            count_response = count_query.execute()
+            total_count = count_response.count
+            
+            # Get rides with pagination
+            response = query\
+                .range(offset, offset + limit - 1)\
+                .order('created_at', desc=True)\
+                .execute()
+            
+            rides = []
+            for ride in response.data:
+                ride_data = {
+                    "ride_id": ride['ride_id'],
+                    "user_id": ride['user_id'],
+                    "user_name": ride['users']['name'] if ride.get('users') else "Unknown",
+                    "driver_id": ride.get('driver_id'),
+                    "driver_name": ride['drivers']['name'] if ride.get('drivers') else None,
+                    "pickup": ride['pickup'],
+                    "drop": ride['drop'],
+                    "fare": ride.get('fare'),
+                    "distance": ride.get('distance'),
+                    "status": ride['status'],
+                    "payment_status": ride.get('payment_status', 'pending'),
+                    "created_at": ride['created_at'],
+                    "completed_at": ride.get('completed_at')
+                }
+                rides.append(ride_data)
+            
+            return {
+                "rides": rides,
+                "total_count": total_count
+            }
+            
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error fetching rides: {str(e)}"
+            )
+    
+    def get_ride_stats_admin(self) -> Dict:
+        """Get ride statistics for admin dashboard"""
+        try:
+            # Total rides
+            total_response = self.supabase.table('rides').select('*', count='exact').execute()
+            total_rides = total_response.count
+            
+            # Completed rides
+            completed_response = self.supabase.table('rides')\
+                .select('*', count='exact')\
+                .eq('status', 'completed')\
+                .execute()
+            completed_rides = completed_response.count
+            
+            # Ongoing rides
+            ongoing_response = self.supabase.table('rides')\
+                .select('*', count='exact')\
+                .eq('status', 'ongoing')\
+                .execute()
+            ongoing_rides = ongoing_response.count
+            
+            # Pending rides
+            pending_response = self.supabase.table('rides')\
+                .select('*', count='exact')\
+                .eq('status', 'pending')\
+                .execute()
+            pending_rides = pending_response.count
+            
+            # Average fare
+            completed_rides_data = self.supabase.table('rides')\
+                .select('fare')\
+                .eq('status', 'completed')\
+                .not_.is_('fare', 'null')\
+                .execute()
+            
+            average_fare = 0.0
+            if completed_rides_data.data:
+                total_fare = sum(ride['fare'] for ride in completed_rides_data.data)
+                average_fare = total_fare / len(completed_rides_data.data)
+            
+            return {
+                "total_rides": total_rides,
+                "completed_rides": completed_rides,
+                "ongoing_rides": ongoing_rides,
+                "pending_rides": pending_rides,
+                "average_fare": round(average_fare, 2)
+            }
+            
+        except Exception as e:
+            return {
+                "total_rides": 0,
+                "completed_rides": 0,
+                "ongoing_rides": 0,
+                "pending_rides": 0,
+                "average_fare": 0.0
+            }
+    
+    def get_rides_by_date_admin(self, date) -> List[Dict]:
+        """Get rides for a specific date"""
+        try:
+            date_str = date.isoformat() if hasattr(date, 'isoformat') else str(date)
+            next_date = (datetime.strptime(date_str, '%Y-%m-%d').date() + timedelta(days=1)).isoformat()
+            
+            response = self.supabase.table('rides')\
+                .select('*')\
+                .gte('created_at', date_str)\
+                .lt('created_at', next_date)\
+                .execute()
+            
+            return response.data
+            
+        except Exception as e:
+            return []
 

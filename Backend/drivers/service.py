@@ -1,7 +1,8 @@
 from fastapi import HTTPException, status
 from .schemas import DriverProfileResponse, DriverProfileUpdate
 from users.service import UserService
-from typing import Dict
+from typing import Dict, Optional
+from datetime import datetime
 
 class DriverService:
 
@@ -146,3 +147,208 @@ class DriverService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=str(e)
             )
+
+    def get_all_drivers_admin(self, page: int = 1, limit: int = 50) -> Dict:
+        """Get all drivers for admin with pagination"""
+        try:
+            offset = (page - 1) * limit
+            
+            # Get total count
+            count_response = self.supabase.table('drivers').select('*', count='exact').execute()
+            total_count = count_response.count
+            
+            # Get drivers with pagination
+            response = self.supabase.table('drivers')\
+                .select('*')\
+                .range(offset, offset + limit - 1)\
+                .order('created_at', desc=True)\
+                .execute()
+            
+            drivers = []
+            for driver in response.data:
+                # Get driver stats
+                driver_stats = self._get_driver_stats(driver['driver_id'])
+                
+                driver_data = {
+                    "driver_id": driver['driver_id'],
+                    "name": driver['name'],
+                    "email": driver['email'],
+                    "phone": driver['phone'],
+                    "license_number": driver.get('license_number'),
+                    "vehicle_info": driver.get('vehicle_info', {}),
+                    "status": driver.get('status', 'offline'),
+                    "is_verified": driver.get('is_verified', False),
+                    "is_active": driver.get('is_active', True),
+                    "created_at": driver['created_at'],
+                    "total_rides": driver_stats.get('total_rides', 0),
+                    "total_earnings": driver_stats.get('total_earnings', 0.0),
+                    "average_rating": driver_stats.get('average_rating', 0.0)
+                }
+                drivers.append(driver_data)
+            
+            return {
+                "drivers": drivers,
+                "total_count": total_count
+            }
+            
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error fetching drivers: {str(e)}"
+            )
+    
+    def _get_driver_stats(self, driver_id: str) -> Dict:
+        """Get statistics for a driver"""
+        try:
+            # Get completed rides
+            rides_response = self.supabase.table('rides')\
+                .select('*')\
+                .eq('driver_id', driver_id)\
+                .eq('status', 'completed')\
+                .execute()
+            
+            total_rides = len(rides_response.data)
+            
+            # Get total earnings from payments
+            ride_ids = [ride['ride_id'] for ride in rides_response.data]
+            total_earnings = 0.0
+            
+            if ride_ids:
+                payments_response = self.supabase.table('payments')\
+                    .select('amount')\
+                    .in_('ride_id', ride_ids)\
+                    .eq('status', 'completed')\
+                    .execute()
+                
+                total_earnings = sum(payment['amount'] for payment in payments_response.data)
+            
+            # Get average rating
+            ratings_response = self.supabase.table('ride_ratings')\
+                .select('rating')\
+                .eq('rated_user_id', driver_id)\
+                .eq('rater_type', 'user')\
+                .execute()
+            
+            average_rating = 0.0
+            if ratings_response.data:
+                average_rating = sum(rating['rating'] for rating in ratings_response.data) / len(ratings_response.data)
+            
+            return {
+                "total_rides": total_rides,
+                "total_earnings": total_earnings,
+                "average_rating": round(average_rating, 2)
+            }
+            
+        except Exception:
+            return {
+                "total_rides": 0,
+                "total_earnings": 0.0,
+                "average_rating": 0.0
+            }
+    
+    def deactivate_driver_admin(self, driver_id: str, admin_id: str, reason: Optional[str] = None) -> Dict:
+        """Deactivate driver by admin"""
+        try:
+            # Update driver status
+            response = self.supabase.table('drivers')\
+                .update({
+                    'is_active': False,
+                    'status': 'offline',
+                    'deactivated_by': admin_id,
+                    'deactivated_at': datetime.now().isoformat(),
+                    'deactivation_reason': reason,
+                    'updated_at': datetime.now().isoformat()
+                })\
+                .eq('driver_id', driver_id)\
+                .execute()
+            
+            if not response.data:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Driver not found"
+                )
+            
+            return {"message": "Driver deactivated successfully"}
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error deactivating driver: {str(e)}"
+            )
+    
+    def activate_driver_admin(self, driver_id: str, admin_id: str) -> Dict:
+        """Activate driver by admin"""
+        try:
+            # Update driver status
+            response = self.supabase.table('drivers')\
+                .update({
+                    'is_active': True,
+                    'activated_by': admin_id,
+                    'activated_at': datetime.now().isoformat(),
+                    'deactivation_reason': None,
+                    'updated_at': datetime.now().isoformat()
+                })\
+                .eq('driver_id', driver_id)\
+                .execute()
+            
+            if not response.data:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Driver not found"
+                )
+            
+            return {"message": "Driver activated successfully"}
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error activating driver: {str(e)}"
+            )
+    
+    def get_driver_stats_admin(self) -> Dict:
+        """Get driver statistics for admin dashboard"""
+        try:
+            # Total drivers
+            total_response = self.supabase.table('drivers').select('*', count='exact').execute()
+            total_drivers = total_response.count
+            
+            # Active drivers
+            active_response = self.supabase.table('drivers')\
+                .select('*', count='exact')\
+                .eq('is_active', True)\
+                .execute()
+            active_drivers = active_response.count
+            
+            # Online drivers
+            online_response = self.supabase.table('drivers')\
+                .select('*', count='exact')\
+                .eq('status', 'online')\
+                .eq('is_active', True)\
+                .execute()
+            online_drivers = online_response.count
+            
+            # Verified drivers
+            verified_response = self.supabase.table('drivers')\
+                .select('*', count='exact')\
+                .eq('is_verified', True)\
+                .execute()
+            verified_drivers = verified_response.count
+            
+            return {
+                "total_drivers": total_drivers,
+                "active_drivers": active_drivers,
+                "online_drivers": online_drivers,
+                "verified_drivers": verified_drivers
+            }
+            
+        except Exception as e:
+            return {
+                "total_drivers": 0,
+                "active_drivers": 0,
+                "online_drivers": 0,
+                "verified_drivers": 0
+            }
