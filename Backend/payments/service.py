@@ -2,7 +2,7 @@ from fastapi import HTTPException, status
 from typing import Dict, Optional
 from decimal import Decimal
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from .repositories.payment_repository import PaymentRepository
 from .services.sslcommerz_service import SSLCommerzService
@@ -267,32 +267,32 @@ class PaymentService:
                 ride_id=ride_id
             )
         
-        def get_payment_by_ride_id(self, ride_id: str, current_user_id: str) -> Optional[PaymentResponse]:
-            """Get payment details for a ride with authorization"""
-            try:
-                # Get ride details using rides service
-                ride_details = self.ride_service.get_ride_payment_details(ride_id)
-                
-                # Check if user has permission to view payment
-                if current_user_id not in [ride_details["user_id"], ride_details.get("driver_id")]:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="You don't have permission to view this payment"
-                    )
-                
-                # Get payment record
-                payment = self.payment_repo.get_payment_by_ride_id(ride_id)
-                if payment:
-                    return PaymentResponse(**payment)
-                return None
-                
-            except HTTPException:
-                raise
-            except Exception as e:
+    def get_payment_by_ride_id(self, ride_id: str, current_user_id: str) -> Optional[PaymentResponse]:
+        """Get payment details for a ride with authorization"""
+        try:
+            # Get ride details using rides service
+            ride_details = self.ride_service.get_ride_payment_details(ride_id)
+            
+            # Check if user has permission to view payment
+            if current_user_id not in [ride_details["user_id"], ride_details.get("driver_id")]:
                 raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=str(e)
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You don't have permission to view this payment"
                 )
+            
+            # Get payment record
+            payment = self.payment_repo.get_payment_by_ride_id(ride_id)
+            if payment:
+                return PaymentResponse(**payment)
+            return None
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e)
+            )
     
     def get_ride_payment_status(self, ride_id: str, current_user_id: str) -> Dict[str, str]:
         """Get payment status for a ride"""
@@ -327,4 +327,187 @@ class PaymentService:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=str(e)
+            )
+    
+    def get_all_payments_admin(self, page: int = 1, limit: int = 50) -> Dict:
+        """Get all payments for admin with pagination"""
+        try:
+            offset = (page - 1) * limit
+            
+            # Get total count
+            count_response = self.supabase.table('payments').select('*', count='exact').execute()
+            total_count = count_response.count
+            
+            # Get payments with ride and user info
+            response = self.supabase.table('payments')\
+                .select('''
+                    *,
+                    rides:ride_id(user_id, driver_id)
+                ''')\
+                .range(offset, offset + limit - 1)\
+                .order('created_at', desc=True)\
+                .execute()
+            
+            payments = []
+            for payment in response.data:
+                payment_data = {
+                    "id": payment['id'],
+                    "ride_id": payment['ride_id'],
+                    "user_id": payment['rides']['user_id'] if payment.get('rides') else None,
+                    "driver_id": payment['rides']['driver_id'] if payment.get('rides') else None,
+                    "amount": payment['amount'],
+                    "payment_method": payment['payment_method'],
+                    "transaction_id": payment.get('transaction_id'),
+                    "status": payment['status'],
+                    "created_at": payment['created_at']
+                }
+                payments.append(payment_data)
+            
+            return {
+                "payments": payments,
+                "total_count": total_count
+            }
+            
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error fetching payments: {str(e)}"
+            )
+    
+    def get_payment_by_ride_id_admin(self, ride_id: str) -> Optional[Dict]:
+        """Get payment by ride ID for admin"""
+        try:
+            response = self.supabase.table('payments')\
+                .select('*')\
+                .eq('ride_id', ride_id)\
+                .single()\
+                .execute()
+            
+            return response.data
+            
+        except Exception:
+            return None
+    
+    def get_payment_stats_admin(self) -> Dict:
+        """Get payment statistics for admin dashboard"""
+        try:
+            # Total revenue
+            completed_payments = self.supabase.table('payments')\
+                .select('amount')\
+                .eq('status', 'completed')\
+                .execute()
+            
+            total_revenue = sum(payment['amount'] for payment in completed_payments.data)
+            
+            # Total transactions
+            total_response = self.supabase.table('payments').select('*', count='exact').execute()
+            total_transactions = total_response.count
+            
+            # Successful transactions
+            success_response = self.supabase.table('payments')\
+                .select('*', count='exact')\
+                .eq('status', 'completed')\
+                .execute()
+            successful_transactions = success_response.count
+            
+            # Failed transactions
+            failed_response = self.supabase.table('payments')\
+                .select('*', count='exact')\
+                .eq('status', 'failed')\
+                .execute()
+            failed_transactions = failed_response.count
+            
+            # Payment method breakdown
+            cash_response = self.supabase.table('payments')\
+                .select('*', count='exact')\
+                .eq('payment_method', 'cash')\
+                .eq('status', 'completed')\
+                .execute()
+            cash_payments = cash_response.count
+            
+            online_response = self.supabase.table('payments')\
+                .select('*', count='exact')\
+                .eq('payment_method', 'online')\
+                .eq('status', 'completed')\
+                .execute()
+            online_payments = online_response.count
+            
+            return {
+                "total_revenue": total_revenue,
+                "total_transactions": total_transactions,
+                "successful_transactions": successful_transactions,
+                "failed_transactions": failed_transactions,
+                "cash_payments": cash_payments,
+                "online_payments": online_payments
+            }
+            
+        except Exception as e:
+            return {
+                "total_revenue": 0.0,
+                "total_transactions": 0,
+                "successful_transactions": 0,
+                "failed_transactions": 0,
+                "cash_payments": 0,
+                "online_payments": 0
+            }
+    
+    def get_revenue_by_date_admin(self, date) -> float:
+        """Get revenue for a specific date"""
+        try:
+            date_str = date.isoformat() if hasattr(date, 'isoformat') else str(date)
+            next_date = (datetime.strptime(date_str, '%Y-%m-%d').date() + timedelta(days=1)).isoformat()
+            
+            response = self.supabase.table('payments')\
+                .select('amount')\
+                .eq('status', 'completed')\
+                .gte('created_at', date_str)\
+                .lt('created_at', next_date)\
+                .execute()
+            
+            return sum(payment['amount'] for payment in response.data)
+            
+        except Exception:
+            return 0.0
+    
+    def get_revenue_analytics_admin(self, start_date: str, end_date: str) -> Dict:
+        """Get revenue analytics for date range"""
+        try:
+            response = self.supabase.table('payments')\
+                .select('amount, created_at, payment_method')\
+                .eq('status', 'completed')\
+                .gte('created_at', start_date)\
+                .lte('created_at', end_date)\
+                .order('created_at')\
+                .execute()
+            
+            # Process data for analytics
+            daily_revenue = {}
+            method_breakdown = {"cash": 0, "online": 0}
+            total_revenue = 0
+            
+            for payment in response.data:
+                # Daily revenue
+                date = payment['created_at'][:10]  # Extract date part
+                if date not in daily_revenue:
+                    daily_revenue[date] = 0
+                daily_revenue[date] += payment['amount']
+                
+                # Method breakdown
+                method_breakdown[payment['payment_method']] += payment['amount']
+                
+                # Total revenue
+                total_revenue += payment['amount']
+            
+            return {
+                "total_revenue": total_revenue,
+                "daily_revenue": daily_revenue,
+                "payment_method_breakdown": method_breakdown,
+                "period": f"{start_date} to {end_date}",
+                "total_transactions": len(response.data)
+            }
+            
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error fetching revenue analytics: {str(e)}"
             )

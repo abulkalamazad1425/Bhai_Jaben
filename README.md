@@ -148,16 +148,39 @@ SSLCommerz merchant account (for payment processing)
 Git for version control
 Quick Start
 Clone the repository
+git clone https://github.com/your-username/RideSharingApp_UberClone.git
+cd RideSharingApp_UberClone/Backend
 
 Set up virtual environment
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+# On Linux/Mac:
+source venv/bin/activate
+# On Windows:
+venv\Scripts\activate
 
 Install dependencies
+pip install -r requirements.txt
 
 Configure environment variables
+# Copy example environment file
+cp .env.example .env
+
+# Edit .env file with your configuration
+nano .env
 
 Set up database
+# Run migration scripts in order
+# Execute SQL files in database/migrations/ folder
 
 Run the application
+# Using fish shell script
+./script.fish
+
+# Or directly with uvicorn
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 Access the application
 
@@ -166,8 +189,39 @@ Alternative Docs: http://localhost:8000/redoc
 ⚙️ Environment Configuration
 Create a .env file in the Backend directory with the following variables:
 
+# Database Configuration
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_KEY=your_supabase_service_role_key
+
+# JWT Configuration
+SECRET_KEY=your_super_secret_jwt_key_here
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+REFRESH_TOKEN_EXPIRE_DAYS=7
+
+# SSLCommerz Payment Gateway
+SSLCOMMERZ_STORE_ID=your_sslcommerz_store_id
+SSLCOMMERZ_STORE_PASSWORD=your_sslcommerz_store_password
+SSLCOMMERZ_SANDBOX_URL=https://sandbox.sslcommerz.com/gwprocess/v4/api.php
+SSLCOMMERZ_VALIDATION_URL=https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php
+
+# Application Settings
+APP_NAME=RideSharing App
+APP_VERSION=1.0.0
+DEBUG=True
+ENVIRONMENT=development
+
+# CORS Settings
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080
+
+# File Upload Settings
+MAX_FILE_SIZE=5242880  # 5MB
+ALLOWED_IMAGE_TYPES=jpg,jpeg,png,gif
+
 📚 API Documentation
 Authentication Endpoints
+
 User Management Endpoints
 Driver Management Endpoints
 Ride Management Endpoints
@@ -273,5 +327,3 @@ Email: support@ridesharing-app.com
 Built with ❤️ using FastAPI and modern Python development practices
 
 ⭐ If you find this project useful, please consider giving it a star!
-
-Similar code found with 2 license types - View matches

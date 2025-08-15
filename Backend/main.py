@@ -5,6 +5,7 @@ from users.router import router as user_router
 from drivers.router import router as driver_router
 from rides.router import router as ride_router
 from payments.router import router as payment_router
+from admin.routes import router as admin_router
 
 app = FastAPI()
 
@@ -13,6 +14,7 @@ app.include_router(user_router)
 app.include_router(driver_router)
 app.include_router(ride_router)
 app.include_router(payment_router)
+app.include_router(admin_router, prefix="/admin", tags=["admin"])
 
 @app.get("/")
 def read_root():
